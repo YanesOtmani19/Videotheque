@@ -676,53 +676,57 @@ $("#chips").addEventListener("drop",e=>{const c=e.target.closest("[data-cat]"); 
   if(v&&!["all","fav"].includes(c.dataset.cat)&&v.cat!==c.dataset.cat){v.cat=c.dataset.cat; v.auto=false; save(); render(); toast(`Rangée dans « ${catOf(v.cat).name} »`)}});
 
 /* ================= Vidéos supprimées d'Instagram : détection automatique =================
-   L'aperçu Instagram envoie sa hauteur à la page (message "MEASURE"). La page d'erreur
-   « link may be broken » est beaucoup plus courte qu'une vraie publication : on compare
-   chaque hauteur à la médiane de toutes les vidéos vérifiées, sans seuil fixé d'avance. */
+   Vérifié sur le vrai Instagram : l'aperçu d'une vidéo disponible envoie à la page
+   LOADING puis MEASURE puis MOUNTED. Une vidéo supprimée ou bloquée n'envoie que LOADING.
+   Donc : LOADING reçu mais rien d'autre après 15 s → vidéo indisponible.
+   Si même LOADING n'arrive pas (pas d'Internet), on ne conclut rien. */
 S.removed=Array.isArray(S.removed)?S.removed:[]; S.checks=S.checks&&typeof S.checks==="object"?S.checks:{};
-const CHECK_TTL=14*864e5;
-function median(a){const b=a.slice().sort((x,y)=>x-y); return b.length?b[b.length>>1]:0}
-function sweepDead(){
-  const hs=Object.values(S.checks).map(c=>c.h).filter(h=>h>0);
-  if(hs.length<8) return;
-  const lim=median(hs)*0.6; const gone=[];
-  S.videos=S.videos.filter(v=>{const c=S.checks[v.code]; if(c&&c.h>0&&c.h<lim){gone.push(v); return false} return true});
-  if(!gone.length) return;
-  for(const v of gone) S.removed.unshift({...v,removedAt:Date.now()});
-  S.removed=S.removed.slice(0,300);
-  if(openId&&gone.some(v=>v.id===openId)) hide();
-  save(); render(); renderRemoved();
-  toast(gone.length===1?"1 vidéo supprimée d'Instagram a été retirée":`${gone.length} vidéos supprimées d'Instagram ont été retirées`);
+const CHECK_TTL=14*864e5, DEAD_AFTER=15000;
+let pendingGone=[], goneT=null;
+function markDead(code){
+  const c=S.checks[code]; if(c&&c.s==="keep") return;
+  S.checks[code]={s:"dead",t:Date.now()};
+  const v=S.videos.find(x=>x.code===code); if(!v) return;
+  S.videos=S.videos.filter(x=>x.code!==code);
+  S.removed.unshift({...v,removedAt:Date.now()}); S.removed=S.removed.slice(0,300);
+  pendingGone.push(v);
+  if(!goneT) goneT=setTimeout(()=>{ // regrouper l'affichage et le message
+    goneT=null; const n=pendingGone.length; if(openId&&pendingGone.some(x=>x.id===openId)) hide(); pendingGone=[];
+    save(); render(); renderRemoved();
+    toast(n===1?"1 vidéo supprimée d'Instagram a été retirée":`${n} vidéos supprimées d'Instagram ont été retirées`);
+  },1200);
 }
-let sweepT;
+function markOk(code){ const c=S.checks[code]; if(c&&c.s==="keep") return; S.checks[code]={s:"ok",t:Date.now()} }
+let saveT=null; const softSave=()=>{if(!saveT) saveT=setTimeout(()=>{saveT=null; save()},2000)};
 window.addEventListener("message",e=>{
-  if(!/(^|\.)instagram\.com$/.test(new URL(e.origin||"https://x.invalid").hostname)) return;
+  let host=""; try{host=new URL(e.origin).hostname}catch(_){return}
+  if(!/(^|\.)instagram\.com$/.test(host)) return;
   let d=e.data; if(typeof d==="string"){try{d=JSON.parse(d)}catch(_){return}}
-  if(!d||d.type!=="MEASURE"||!d.details) return;
-  const h=Number(d.details.height); if(!(h>0)) return;
+  if(!d||!d.type) return;
   const f=[...document.querySelectorAll("iframe[data-code]")].find(x=>x.contentWindow===e.source); if(!f) return;
   const code=f.dataset.code; if(!code) return;
-  const prev=S.checks[code]; S.checks[code]={h:Math.max(h,prev&&Date.now()-prev.t<6e4?prev.h:0),t:Date.now()};
-  f.dispatchEvent(new Event("measured"));
-  if(!sweepT) sweepT=setTimeout(()=>{sweepT=null; save(); sweepDead()},2000);
+  if(d.type==="LOADING"&&!f._deadT&&!f._ok){
+    f._deadT=setTimeout(()=>{ if(!f._ok&&f.isConnected){ markDead(code); f.dispatchEvent(new Event("verdict")) } },DEAD_AFTER);
+  } else if(d.type==="MEASURE"||d.type==="MOUNTED"){
+    if(!f._ok){ f._ok=true; clearTimeout(f._deadT); markOk(code); softSave(); f.dispatchEvent(new Event("verdict")) }
+  }
 });
 // vérification en arrière-plan, 2 vidéos à la fois, une fois toutes les 2 semaines par vidéo
 let checking=false;
 async function backgroundCheck(){
   if(checking||!navigator.onLine) return; checking=true;
-  const todo=S.videos.filter(v=>{const c=S.checks[v.code]; return v.code&&(!c||Date.now()-c.t>CHECK_TTL)});
+  const todo=S.videos.filter(v=>{const c=S.checks[v.code]; return v.code&&(!c||!c.s||(c.s==="ok"&&Date.now()-c.t>CHECK_TTL))});
   const box=document.createElement("div"); box.setAttribute("aria-hidden","true");
-  box.style.cssText="position:fixed;left:-20000px;top:0;width:326px;height:700px;overflow:hidden;pointer-events:none;opacity:0";
+  box.style.cssText="position:fixed;left:-20000px;top:0;width:326px;height:700px;overflow:hidden;pointer-events:none";
   document.body.appendChild(box);
   const one=v=>new Promise(res=>{
     const f=document.createElement("iframe"); f.src=embedUrl(v); f.dataset.code=v.code; f.tabIndex=-1;
     f.style.cssText="width:326px;height:700px;border:0";
-    let done=false; const end=()=>{if(done) return; done=true; setTimeout(()=>{f.remove(); res()},800)};
-    f.addEventListener("measured",end); setTimeout(end,15000); box.appendChild(f);
+    let done=false; const end=()=>{if(done) return; done=true; setTimeout(()=>{clearTimeout(f._deadT); f.remove(); res()},500)};
+    f.addEventListener("verdict",end); setTimeout(end,DEAD_AFTER+8000); box.appendChild(f);
   });
   let i=0; const worker=async()=>{while(i<todo.length){ if(document.hidden){await new Promise(r=>setTimeout(r,3000)); continue} await one(todo[i++]) }};
-  await Promise.all([worker(),worker()]); box.remove(); save(); sweepDead(); checking=false;
-  if(S.videos.some(v=>v.code&&!S.checks[v.code])) setTimeout(backgroundCheck,2000);
+  await Promise.all([worker(),worker(),worker()]); box.remove(); save(); checking=false;
 }
 function renderRemoved(){
   const n=S.removed.length; $("#removedBtn").hidden=!n; $("#removedLabel").textContent=`Vidéos retirées automatiquement (${n})`;
@@ -734,10 +738,30 @@ $("#removedBtn").addEventListener("click",()=>{const l=$("#removedList"); l.hidd
 $("#removedList").addEventListener("click",e=>{
   const b=e.target.closest("[data-restore]"); if(!b) return;
   const v=S.removed.splice(Number(b.dataset.restore),1)[0]; if(!v) return;
-  delete v.removedAt; v.auto=false; S.checks[v.code]={h:0,t:Date.now()+3650*864e5}; // ne plus jamais la retirer
+  delete v.removedAt; v.auto=false; S.checks[v.code]={s:"keep",t:Date.now()}; // ne plus jamais la retirer
   if(!S.videos.some(x=>x.code===v.code)) S.videos.push(v);
   save(); render(); renderRemoved(); toast("Vidéo restaurée");
 });
+/* ================= Mise à jour des catégories : Claude séparé de IA ================= */
+(function(){
+  if(S.mig&&S.mig.claude) return;
+  const CLAUDE_CODES=new Set(["Dd4INp7oBy9","Dd1aWXixcPV","DdysDw5t4Km","DdcyQE3OhLC","DXsU_poEUws","DWcUoIBDfm1","DWJiyeGE45c"]);
+  const ia=S.cats.find(c=>c.id==="ia");
+  if(ia&&ia.name==="IA & tech") ia.name="IA";
+  if(!S.cats.some(c=>c.id==="claude")){
+    const i=S.cats.findIndex(c=>c.id==="ia"); const at=i>=0?i:Math.max(0,S.cats.findIndex(c=>c.id==="autre"));
+    S.cats.splice(at,0,{id:"claude",name:"Claude",hue:292});
+  }
+  let n=0;
+  for(const v of S.videos){
+    if(v.cat==="claude") continue;
+    const txt=(v.title+" "+v.author).toLowerCase();
+    if(CLAUDE_CODES.has(v.code)||((v.cat==="ia"||v.cat==="argent"||v.cat==="autre")&&v.auto!==false&&/claude|anthropic/.test(txt))){v.cat="claude"; n++}
+  }
+  S.mig={...(S.mig||{}),claude:true}; save();
+  if(n&&S.videos.length) setTimeout(()=>toast(`Nouvelle catégorie « Claude » : ${n} vidéos rangées`),800);
+})();
+
 renderRemoved();
 setTimeout(backgroundCheck,4000);
 
