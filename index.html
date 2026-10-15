@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Vidéothèque</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Vidéothèque">
+<meta name="theme-color" content="#F3F1EC" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111214" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
+<style>
+/* Mise en page : barre du haut + rubans de catégories collants, accueil en rangées horizontales (une par catégorie),
+   vue catégorie en grille, visionneuse plein écran en feuille. */
+:root{
+  --bg:#F3F1EC; --surface:#FFFFFF; --raised:#FFFFFF; --sunk:#E7E4DC; --ink:#17171A; --muted:#6B6A70; --line:#DEDAD0;
+  --accent:#E8552F; --accent-ink:#FFFFFF; --danger:#C93A2B; --star:#D99A00; --scrim:rgba(20,18,16,.45);
+  --f-display:"Bricolage Grotesque", -apple-system, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+  --f-body:-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
+  --r:14px; --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#111214; --surface:#1A1B1F; --raised:#222328; --sunk:#0B0B0D; --ink:#EEEDEA; --muted:#9A99A0; --line:#2C2D33;
+  --accent:#FF7A55; --accent-ink:#1B0C06; --danger:#FF6B5C; --star:#F7C548; --scrim:rgba(0,0,0,.6); color-scheme:dark}}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink)}
+body{font:16px/1.45 var(--f-body);min-height:100dvh;overscroll-behavior-y:none}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+[hidden]{display:none!important}
+img{max-width:100%}
+
+/* Barre du haut */
+.top{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);
+  backdrop-filter:saturate(1.4) blur(14px);-webkit-backdrop-filter:saturate(1.4) blur(14px);
+  padding-top:var(--safe-t);border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
+.bar{display:flex;align-items:center;gap:6px;padding:10px 16px 6px;max-width:1280px;margin:0 auto}
+.bar h1{font:800 1.6rem/1 var(--f-display);letter-spacing:-.02em;margin:0;flex:1;min-width:0}
+.ib{width:40px;height:40px;border-radius:50%;border:0;background:transparent;display:grid;place-items:center;color:var(--ink)}
+.ib:hover{background:var(--sunk)}
+.ib svg{width:22px;height:22px}
+.ib.primary{background:var(--accent);color:var(--accent-ink)}
+.searchrow{padding:0 16px 8px;max-width:1280px;margin:0 auto}
+.searchrow input{width:100%;border:0;background:var(--sunk);border-radius:10px;padding:9px 12px;font-size:16px}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:4px 16px 12px;max-width:1280px;margin:0 auto;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;font-weight:600;font-size:.92rem;display:inline-flex;gap:7px;align-items:center;white-space:nowrap}
+.chip i{width:9px;height:9px;border-radius:50%;background:var(--c);display:inline-block}
+.chip b{font-weight:500;color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.chip[aria-pressed="true"] b{color:inherit;opacity:.65}
+.chip.drop{transform:scale(1.08);box-shadow:0 0 0 3px var(--c)}
+
+main{max-width:1280px;margin:0 auto;padding:8px 0 calc(40px + var(--safe-b))}
+
+/* Rangées de l'accueil */
+.row{margin:14px 0 22px}
+.rowhead{display:flex;align-items:baseline;justify-content:space-between;padding:0 16px;margin-bottom:10px;gap:10px}
+.rowhead h2{font:800 1.22rem/1.15 var(--f-display);margin:0;display:flex;align-items:center;gap:8px;min-width:0}
+.rowhead h2 i{width:10px;height:10px;border-radius:50%;background:var(--c);flex:none}
+.rowhead button{border:0;background:none;color:var(--muted);font-weight:600;font-size:.9rem;padding:4px 0;white-space:nowrap}
+.strip{display:flex;gap:10px;overflow-x:auto;padding:0 16px 4px;scroll-padding-inline:16px;scroll-snap-type:x proximity;scrollbar-width:none}
+.strip::-webkit-scrollbar{display:none}
+.strip .tile{width:clamp(128px,36vw,176px);flex:none;scroll-snap-align:start}
+
+/* Grille d'une catégorie */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;padding:6px 16px}
+@media (min-width:900px){.grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:16px}}
+
+/* Tuile vidéo */
+.tile{border:0;background:none;padding:0;text-align:left;display:grid;gap:6px;min-width:0}
+.tile .pv{position:relative;aspect-ratio:4/5;max-width:100%;border-radius:var(--r);overflow:hidden;background:var(--c);isolation:isolate}
+.tile .fb{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:space-between;padding:10px;color:#fff;
+  background:linear-gradient(160deg,color-mix(in srgb,var(--c) 75%,#fff 25%),var(--c) 55%,color-mix(in srgb,var(--c) 65%,#000 35%))}
+.tile .fb .ini{font:800 2.6rem/1 var(--f-display);opacity:.9;letter-spacing:-.03em}
+.tile .fb .cat{font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.9}
+.tile iframe{position:absolute;left:0;top:0;border:0;width:326px;height:620px;transform-origin:0 0;pointer-events:none;z-index:1;background:transparent;opacity:0;transition:opacity .4s}
+.tile iframe.on{opacity:1}
+.tile .star{position:absolute;top:8px;right:8px;z-index:2;width:26px;height:26px;border-radius:50%;background:rgba(0,0,0,.45);display:grid;place-items:center;color:#FFD15C}
+.tile .star svg{width:15px;height:15px}
+.tile .cap{display:grid;gap:1px;padding:0 2px;min-width:0}
+.tile .t{font-weight:600;font-size:.9rem;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.tile .a{font-size:.78rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile[draggable="true"]{cursor:grab}
+
+.more{display:block;margin:18px auto 0;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:10px 18px;font-weight:600}
+.sectionhead{display:flex;align-items:baseline;justify-content:space-between;padding:6px 16px 4px;gap:10px}
+.sectionhead h2{font:800 1.7rem/1.1 var(--f-display);margin:0;letter-spacing:-.02em}
+.sectionhead span{color:var(--muted);font-size:.9rem;font-variant-numeric:tabular-nums}
+
+.empty{margin:36px 16px;padding:32px 20px;border:1.5px dashed var(--line);border-radius:18px;text-align:center;display:grid;gap:10px;justify-items:center;color:var(--muted)}
+.empty h2{font:800 1.35rem var(--f-display);margin:0;color:var(--ink);text-wrap:balance}
+.empty p{margin:0;max-width:40ch}
+.btn{border:0;border-radius:12px;padding:12px 18px;font-weight:700;background:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:var(--sunk);color:var(--ink)}
+.btn.danger{background:var(--danger);color:#fff}
+.btn:disabled{opacity:.5}
+
+/* Feuilles (visionneuse, ajout, menu) */
+.scrim{position:fixed;inset:0;background:var(--scrim);z-index:40;opacity:0;transition:opacity .2s}
+.scrim.show{opacity:1}
+.sheet{position:fixed;z-index:50;left:0;right:0;bottom:0;max-height:calc(100dvh - var(--safe-t) - 12px);background:var(--surface);
+  border-radius:20px 20px 0 0;display:flex;flex-direction:column;transform:translateY(102%);transition:transform .28s cubic-bezier(.2,.8,.2,1);
+  padding-bottom:var(--safe-b)}
+.sheet.show{transform:none}
+@media (min-width:760px){.sheet{left:50%;right:auto;bottom:auto;top:50%;width:min(560px,92vw);max-height:90dvh;border-radius:20px;transform:translate(-50%,-46%) scale(.98);opacity:0;transition:transform .22s,opacity .22s}
+  .sheet.show{transform:translate(-50%,-50%);opacity:1}
+  .sheet.wide{width:min(900px,94vw)}}
+.grab{width:38px;height:5px;border-radius:3px;background:var(--line);margin:8px auto 2px;flex:none}
+@media (min-width:760px){.grab{display:none}}
+.sheethead{display:flex;align-items:center;gap:8px;padding:6px 12px 6px 18px;flex:none}
+.sheethead h3{font:800 1.2rem var(--f-display);margin:0;flex:1;min-width:0}
+.sheetbody{overflow-y:auto;padding:4px 18px 18px;display:grid;gap:14px;-webkit-overflow-scrolling:touch}
+
+.viewer{display:grid;gap:14px}
+@media (min-width:760px){.viewer{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}}
+.embed{position:relative;border-radius:var(--r);overflow:hidden;background:var(--sunk);height:min(68dvh,640px)}
+.embed iframe{border:0;width:100%;height:100%;display:block;background:transparent}
+.embed .fbbig{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;color:#fff;background:var(--c)}
+.vtitle{font:800 1.3rem/1.2 var(--f-display);margin:0;overflow-wrap:anywhere}
+.vmeta{color:var(--muted);font-size:.9rem;overflow-wrap:anywhere}
+.label{font-size:.75rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.catpick{display:flex;flex-wrap:wrap;gap:8px}
+.catpick .chip{padding:8px 13px}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.acts .btn{flex:1 1 auto}
+.field{display:grid;gap:6px}
+.field input{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:11px 12px;font-size:16px;min-width:0}
+.inrow{display:flex;gap:8px}
+.inrow input{flex:1}
+.msg{font-size:.9rem;color:var(--muted);min-height:1.2em}
+.msg.err{color:var(--danger)}
+.confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--sunk);border-radius:12px;padding:10px 12px}
+.confirm span{flex:1 1 160px}
+
+.menu{display:grid;gap:2px}
+.mi{display:flex;align-items:center;gap:12px;border:0;background:none;text-align:left;padding:12px 6px;border-radius:10px;width:100%}
+.mi:hover{background:var(--sunk)}
+.mi svg{width:22px;height:22px;flex:none;color:var(--muted)}
+.mi div{display:grid;min-width:0}
+.mi small{color:var(--muted);font-size:.82rem}
+.catrow{display:flex;gap:8px;align-items:center}
+.catrow i{width:12px;height:12px;border-radius:50%;background:var(--c);flex:none}
+.catrow input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:9px 10px;font-size:16px}
+.catrow b{font-weight:500;color:var(--muted);font-size:.85rem;min-width:3ch;text-align:right;font-variant-numeric:tabular-nums}
+.catrow .ib svg{width:18px;height:18px}
+.progress{height:6px;border-radius:9px;background:var(--sunk);overflow:hidden}
+.progress span{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+.toast{position:fixed;left:50%;bottom:calc(20px + var(--safe-b));transform:translate(-50%,30px);opacity:0;z-index:60;background:var(--ink);color:var(--bg);
+  padding:10px 16px;border-radius:12px;font-weight:600;font-size:.92rem;transition:.25s;pointer-events:none;max-width:calc(100vw - 32px);text-align:center}
+.toast.show{transform:translate(-50%,0);opacity:1}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 6px}
+.switch input{width:22px;height:22px;accent-color:var(--accent)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="bar">
+    <h1>Vidéothèque</h1>
+    <button class="ib" id="searchBtn" type="button" aria-label="Rechercher"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg></button>
+    <button class="ib" id="menuBtn" type="button" aria-label="Menu"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/></svg></button>
+    <button class="ib primary" id="addBtn" type="button" aria-label="Ajouter une vidéo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+  </div>
+  <div class="searchrow" id="searchRow" hidden><input type="search" id="q" placeholder="Compte, titre, note…" autocomplete="off"></div>
+  <nav class="chips" id="chips" aria-label="Catégories"></nav>
+</header>
+
+<main id="main"></main>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<!-- Visionneuse -->
+<section class="sheet wide" id="viewSheet" role="dialog" aria-modal="true" aria-labelledby="vTitle" hidden>
+  <div class="grab"></div>
+  <div class="sheethead"><h3 id="vHeadCat">Vidéo</h3>
+    <button class="ib" data-close type="button" aria-label="Fermer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="sheetbody"><div class="viewer" id="viewer"></div></div>
+</section>
+
+<!-- Ajout / modification -->
+<section class="sheet" id="addSheet" role="dialog" aria-modal="true" aria-labelledby="addTitle" hidden>
+  <div class="grab"></div>
+  <div class="sheethead"><h3 id="addTitle">Ajouter une vidéo</h3>
+    <button class="ib" data-close type="button" aria-label="Fermer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <form class="sheetbody" id="addForm" autocomplete="off">
+    <div class="field"><label class="label" for="fUrl">Lien Instagram</label>
+      <div class="inrow"><input type="url" id="fUrl" placeholder="https://www.instagram.com/reel/…" inputmode="url">
+      <button class="btn ghost" type="button" id="pasteBtn">Coller</button></div></div>
+    <div class="field"><label class="label" for="fTitle">Titre (optionnel)</label>
+      <input type="text" id="fTitle" maxlength="120" placeholder="ex. Ramen du Plateau"></div>
+    <div class="field"><label class="label" for="fNote">Note (optionnel)</label>
+      <input type="text" id="fNote" maxlength="300" placeholder="Une adresse, un ingrédient…"></div>
+    <div class="field"><span class="label">Catégorie</span><div class="catpick" id="fCats"></div></div>
+    <div class="msg" id="addMsg">Dans Instagram : Partager → Copier le lien.</div>
+    <button class="btn" type="submit" id="addSubmit">Ajouter</button>
+  </form>
+</section>
+
+<!-- Menu -->
+<section class="sheet" id="menuSheet" role="dialog" aria-modal="true" aria-labelledby="menuTitle" hidden>
+  <div class="grab"></div>
+  <div class="sheethead"><h3 id="menuTitle">Réglages</h3>
+    <button class="ib" data-close type="button" aria-label="Fermer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="sheetbody">
+    <div class="menu" id="menuMain">
+      <button class="mi" type="button" id="importBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+        <div><span>Importer des vidéos</span><small>Le fichier préparé par Claude, ou l'export Instagram (.zip / .json)</small></div></button>
+      <button class="mi" type="button" id="exportBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M7 9l5-5 5 5M5 20h14"/></svg>
+        <div><span>Sauvegarder ma vidéothèque</span><small>Un fichier à garder, ou à importer sur ton autre appareil</small></div></button>
+      <button class="mi" type="button" id="catsBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+        <div><span>Gérer les catégories</span><small>Créer, renommer, réordonner, supprimer</small></div></button>
+      <label class="switch"><span>Aperçus des vidéos<br><small style="color:var(--muted)">Désactive si ton téléphone ralentit</small></span><input type="checkbox" id="pvToggle"></label>
+      <div class="progress" id="prog" hidden><span></span></div>
+      <div class="msg" id="menuMsg"></div>
+    </div>
+    <div id="catsPane" hidden style="display:grid;gap:10px">
+      <button class="btn ghost" type="button" id="catsBack" style="justify-self:start;padding:8px 12px">← Retour</button>
+      <div id="catList" style="display:grid;gap:8px"></div>
+      <form class="inrow" id="newCatForm"><input type="text" id="newCat" maxlength="30" placeholder="Nouvelle catégorie" style="border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px 12px;font-size:16px;min-width:0">
+        <button class="btn" type="submit">Créer</button></form>
+      <div class="msg">Supprimer une catégorie déplace ses vidéos dans « Autre ».</div>
+    </div>
+  </div>
+</section>
+
+<input type="file" id="fileIn" accept=".zip,.json,application/json,application/zip" hidden>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+"use strict";
+/* ================= Données ================= */
+const KEY="videotheque.v1";
+const DEFAULT_CATS=[
+  {id:"recettes",name:"Recettes",hue:18},{id:"restaurants",name:"Restaurants",hue:350},{id:"voyage",name:"Voyage",hue:200},
+  {id:"sport",name:"Sport & muscu",hue:145},{id:"argent",name:"Argent & business",hue:95},{id:"ia",name:"IA & tech",hue:262},
+  {id:"etudes",name:"Études & carrière",hue:228},{id:"style",name:"Soins & style",hue:320},{id:"astuces",name:"Astuces & bons plans",hue:48},
+  {id:"gaming",name:"Jeux",hue:178},{id:"humour",name:"Humour",hue:28},{id:"autre",name:"Autre",hue:215,fixed:true}
+];
+const KEYWORDS={
+  restaurants:["resto","restaurant","halal spot","shawarma","brunch","café ","mtlfood","eatmtl","best food in","adresse","michelin","foodspot"],
+  recettes:["recipe","recette","ingredients","ingrédients","meal prep","protein","cook","cuisine","tbsp","cup ","chicken","poulet","dessert","sauce"],
+  voyage:["travel","voyage","trip","japan","japon","flight","vol ","hotel","esim","itinerary","tourisme","aeroplan","visit"],
+  sport:["workout","gym","fitness","muscu","exercise","exercice","stretch","mobility","mobilité","pull up","pull-up","calisthenics","abs","squat","football","soccer","basketball","volleyball","training","entrainement","athlete"],
+  argent:["money","argent","business","side hustle","sidehustle","trading","crypto","invest","finance","entrepreneur","youtube automation","ecom","dropshipping","nft","salary","salaire"],
+  ia:["claude","chatgpt","gpt","openai","ai tool","outils ia"," ia ","#ia","#ai","artificial intelligence","machine learning","python","coding","code","prompt","llm","n8n","vibecoding","tech"],
+  etudes:["study","studygram","student","étudiant","etudiant","college","university","université","essay","exam","homework","cv","resume","job","emploi","textbook","cours","school"],
+  style:["skincare","glow up","glowup","acne","hair","teeth","outfit","fashion","style","starboy","fortheboys","parfum","watch","montre"],
+  astuces:["hack","astuce","bon plan","bonplan","tips","life hack","lifehack","amazon","freebies","save money"],
+  gaming:["rocket league","rocketleague","fifa","gaming","rubik","cubing","playstation","xbox"],
+  humour:["meme","funny","humour","lol","comedy","😂","brainrot"]
+};
+let S={cats:DEFAULT_CATS.slice(),videos:[],previews:true};
+try{const raw=localStorage.getItem(KEY); if(raw){const d=JSON.parse(raw); S={...S,...d}; if(!Array.isArray(S.cats)||!S.cats.length) S.cats=DEFAULT_CATS.slice()}}catch(e){}
+if(!S.cats.some(c=>c.id==="autre")) S.cats.push(DEFAULT_CATS.at(-1));
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){toast("Impossible d'enregistrer : l'espace de stockage est plein.")}}
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+
+let view={cat:"all",q:"",limit:30}, openId=null, editId=null, dragId=null;
+const $=s=>document.querySelector(s);
+
+/* ================= Utilitaires ================= */
+const IG_RE=/instagram\.com\/(?:[A-Za-z0-9_.]+\/)?(reels?|p|tv)\/([A-Za-z0-9_-]+)/i;
+function parseIg(raw){
+  let u; try{u=new URL(String(raw).trim())}catch(e){return null}
+  const m=u.href.match(IG_RE); if(!m) return null;
+  const t=m[1].toLowerCase(), path=t==="reels"?"reel":t;
+  return {url:`https://www.instagram.com/${path}/${m[2]}/`,code:m[2],kind:path==="reel"?"Reel":path==="tv"?"IGTV":"Publication",path};
+}
+const embedUrl=v=>{const p=parseIg(v.url); return p?`https://www.instagram.com/${p.path}/${p.code}/embed/`:null};
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const catOf=id=>S.cats.find(c=>c.id===id)||S.cats.find(c=>c.id==="autre");
+const color=c=>`hsl(${c.hue} 58% 46%)`;
+const slug=s=>s.normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,30)||("c"+Date.now().toString(36));
+function guessCat(text){const t=(text||"").toLowerCase(); for(const [id,w] of Object.entries(KEYWORDS)) if(S.cats.some(c=>c.id===id)&&w.some(x=>t.includes(x))) return id; return "autre"}
+const titleOf=v=>v.title||(v.author?"@"+v.author:"Vidéo Instagram");
+let toastT; function toast(t){const el=$("#toast"); el.textContent=t; el.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove("show"),2600)}
+const STAR=`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3.2l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 17l-5.4 2.9 1.1-6.1L3.2 9.6l6.1-.8z"/></svg>`;
+const sorted=list=>list.slice().sort((a,b)=>(b.fav?1:0)-(a.fav?1:0)||(b.added||0)-(a.added||0));
+function matches(v){if(!view.q) return true; return [v.title,v.note,v.author,catOf(v.cat).name].join(" ").toLowerCase().includes(view.q)}
+
+/* ================= Aperçus (iframes Instagram chargés à la demande) ================= */
+const io=("IntersectionObserver" in window)?new IntersectionObserver(es=>{
+  for(const e of es){ if(!e.isIntersecting) continue; const pv=e.target; io.unobserve(pv); loadPreview(pv) }
+},{rootMargin:"300px 300px"}):null;
+function loadPreview(pv){
+  if(!S.previews||pv.dataset.loaded) return; const src=pv.dataset.src; if(!src) return;
+  pv.dataset.loaded="1";
+  const f=document.createElement("iframe");
+  f.src=src; f.loading="lazy"; f.tabIndex=-1; f.setAttribute("aria-hidden","true"); f.setAttribute("scrolling","no");
+  f.title=""; f.referrerPolicy="strict-origin-when-cross-origin";
+  const fit=()=>{const w=pv.clientWidth||150; const s=w/326; f.style.transform=`translateY(${-56*s}px) scale(${s})`};
+  fit(); f.onload=()=>f.classList.add("on");
+  pv.appendChild(f);
+}
+function tileHTML(v){
+  const c=catOf(v.cat), src=embedUrl(v);
+  const ini=(v.author||v.title||"?").replace(/^@/,"").slice(0,1).toUpperCase();
+  return `<button class="tile" type="button" data-id="${esc(v.id)}" draggable="true" style="--c:${color(c)}" aria-label="${esc(titleOf(v))}">
+    <div class="pv" ${src&&S.previews?`data-src="${esc(src)}"`:""}>
+      <div class="fb"><span class="cat">${esc(c.name)}</span><span class="ini">${esc(ini)}</span></div>
+      ${v.fav?`<span class="star">${STAR}</span>`:""}
+    </div>
+    <div class="cap"><span class="t">${esc(titleOf(v))}</span>${v.title&&v.author?`<span class="a">@${esc(v.author)}</span>`:v.note?`<span class="a">${esc(v.note)}</span>`:""}</div>
+  </button>`;
+}
+function armPreviews(root){ if(!S.previews) return; root.querySelectorAll(".pv[data-src]").forEach(pv=>io?io.observe(pv):loadPreview(pv)) }
+window.addEventListener("resize",()=>document.querySelectorAll(".pv iframe").forEach(f=>{const pv=f.parentElement,s=pv.clientWidth/326; f.style.transform=`translateY(${-56*s}px) scale(${s})`}));
+
+/* ================= Rendu ================= */
+function renderChips(){
+  const n=id=>S.videos.filter(v=>catOf(v.cat).id===id).length;
+  let h=`<button class="chip" type="button" data-cat="all" aria-pressed="${view.cat==="all"}">Tout <b>${S.videos.length}</b></button>`;
+  if(S.videos.some(v=>v.fav)) h+=`<button class="chip" type="button" data-cat="fav" aria-pressed="${view.cat==="fav"}" style="--c:var(--star)"><i></i>Favoris <b>${S.videos.filter(v=>v.fav).length}</b></button>`;
+  for(const c of S.cats){const k=n(c.id); if(!k&&view.cat!==c.id&&S.videos.length) continue;
+    h+=`<button class="chip" type="button" data-cat="${esc(c.id)}" aria-pressed="${view.cat===c.id}" style="--c:${color(c)}"><i></i>${esc(c.name)} <b>${k}</b></button>`}
+  $("#chips").innerHTML=h;
+}
+function renderMain(){
+  const m=$("#main");
+  if(!S.videos.length){
+    m.innerHTML=`<div class="empty"><h2>Ta vidéothèque est vide</h2>
+      <p>Importe le fichier de tes vidéos enregistrées : elles arrivent toutes d'un coup, déjà rangées par catégorie.</p>
+      <button class="btn" type="button" data-act="import">Importer mes vidéos</button>
+      <p style="font-size:.85rem">Ou ajoute une vidéo avec le bouton +.</p></div>`;
+    return;
+  }
+  if(view.cat==="all"&&!view.q){
+    let h="";
+    const favs=sorted(S.videos.filter(v=>v.fav));
+    if(favs.length) h+=rowHTML({id:"fav",name:"Favoris",hue:44},favs,true);
+    for(const c of S.cats){const list=sorted(S.videos.filter(v=>catOf(v.cat).id===c.id)); if(list.length) h+=rowHTML(c,list)}
+    m.innerHTML=h; armPreviews(m); return;
+  }
+  let list, head;
+  if(view.cat==="all"){list=S.videos.filter(matches); head="Résultats"}
+  else if(view.cat==="fav"){list=S.videos.filter(v=>v.fav&&matches(v)); head="Favoris"}
+  else {list=S.videos.filter(v=>catOf(v.cat).id===view.cat&&matches(v)); head=catOf(view.cat).name}
+  list=sorted(list);
+  let h=`<div class="sectionhead"><h2>${esc(head)}</h2><span>${list.length} vidéo${list.length>1?"s":""}</span></div>`;
+  if(!list.length) h+=`<div class="empty"><h2>Rien ici</h2><p>${view.q?"Aucune vidéo ne correspond à ta recherche.":"Aucune vidéo dans cette catégorie pour l'instant. Ouvre une vidéo et touche cette catégorie pour l'y ranger."}</p></div>`;
+  else h+=`<div class="grid">${list.slice(0,view.limit).map(tileHTML).join("")}</div>`+(list.length>view.limit?`<button class="more" type="button" data-act="more">Afficher plus (${list.length-view.limit})</button>`:"");
+  m.innerHTML=h; armPreviews(m);
+}
+function rowHTML(c,list,isFav){
+  const N=12;
+  return `<section class="row" style="--c:${isFav?"var(--star)":color(c)}">
+    <div class="rowhead"><h2><i></i>${esc(c.name)}</h2><button type="button" data-open="${esc(c.id)}">Tout voir · ${list.length}</button></div>
+    <div class="strip">${list.slice(0,N).map(tileHTML).join("")}</div></section>`;
+}
+function render(){renderChips();renderMain()}
+
+/* ================= Feuilles ================= */
+let openSheet=null;
+function show(id){
+  if(openSheet) hide(true);
+  const s=$(id); openSheet=s; $("#scrim").hidden=false; s.hidden=false;
+  requestAnimationFrame(()=>{$("#scrim").classList.add("show"); s.classList.add("show")});
+  document.body.style.overflow="hidden";
+}
+function hide(instant){
+  const s=openSheet; if(!s) return; openSheet=null;
+  s.classList.remove("show"); $("#scrim").classList.remove("show"); document.body.style.overflow="";
+  const done=()=>{s.hidden=true; if(!openSheet) $("#scrim").hidden=true; if(s.id==="viewSheet") $("#viewer").innerHTML=""};
+  instant?done():setTimeout(done,260);
+  if(s.id==="viewSheet") openId=null;
+}
+$("#scrim").addEventListener("click",()=>hide());
+document.addEventListener("click",e=>{if(e.target.closest("[data-close]")) hide()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape") hide()});
+// glisser vers le bas pour fermer (téléphone)
+document.querySelectorAll(".sheet").forEach(s=>{
+  let y0=null;
+  s.addEventListener("touchstart",e=>{const g=e.target.closest(".grab,.sheethead"); y0=g?e.touches[0].clientY:null},{passive:true});
+  s.addEventListener("touchmove",e=>{if(y0==null) return; const dy=e.touches[0].clientY-y0; if(dy>0) s.style.transform=`translateY(${dy}px)`},{passive:true});
+  s.addEventListener("touchend",e=>{if(y0==null) return; const dy=(e.changedTouches[0].clientY-y0); s.style.transform=""; y0=null; if(dy>90) hide()});
+});
+
+/* ================= Visionneuse ================= */
+function openViewer(id){
+  const v=S.videos.find(x=>x.id===id); if(!v) return; openId=id;
+  const c=catOf(v.cat), src=embedUrl(v);
+  $("#vHeadCat").textContent=c.name;
+  $("#viewer").innerHTML=`
+    <div class="embed" style="--c:${color(c)}">
+      <div class="fbbig"><div><div style="font:800 1.4rem var(--f-display)">${esc(titleOf(v))}</div><div style="opacity:.85;margin-top:6px">Chargement de l'aperçu…</div></div></div>
+      ${src?`<iframe src="${esc(src)}" allow="autoplay; encrypted-media; picture-in-picture; clipboard-write" referrerpolicy="strict-origin-when-cross-origin" title="Vidéo Instagram" style="position:relative;z-index:1"></iframe>`:""}
+    </div>
+    <div style="display:grid;gap:14px;align-content:start;min-width:0">
+      <div><h4 class="vtitle" id="vTitle">${esc(titleOf(v))}</h4>
+        <div class="vmeta">${v.author&&v.title?"@"+esc(v.author)+" · ":""}${v.note?esc(v.note)+" · ":""}${v.added?new Date(v.added).toLocaleDateString("fr-CA",{day:"numeric",month:"long",year:"numeric"}):""}</div></div>
+      <a class="btn" href="${esc(v.url)}" target="_blank" rel="noopener" style="text-align:center;text-decoration:none">Ouvrir dans Instagram</a>
+      <div class="field"><span class="label">Ranger dans</span>
+        <div class="catpick">${S.cats.map(k=>`<button class="chip" type="button" data-move="${esc(k.id)}" aria-pressed="${k.id===c.id}" style="--c:${color(k)}"><i></i>${esc(k.name)}</button>`).join("")}</div></div>
+      <div class="acts">
+        <button class="btn ghost" type="button" data-vact="fav">${v.fav?"★ Retirer des favoris":"☆ Favori"}</button>
+        <button class="btn ghost" type="button" data-vact="edit">Modifier</button>
+        <button class="btn ghost" type="button" data-vact="del" style="color:var(--danger)">Retirer</button>
+      </div>
+      <div id="vConfirm"></div>
+    </div>`;
+  if(!$("#viewSheet").classList.contains("show")) show("#viewSheet");
+}
+$("#viewer").addEventListener("click",e=>{
+  const v=S.videos.find(x=>x.id===openId); if(!v) return;
+  const mv=e.target.closest("[data-move]");
+  if(mv){ if(v.cat!==mv.dataset.move){v.cat=mv.dataset.move; v.auto=false; save(); render(); openViewer(v.id); toast(`Rangée dans « ${catOf(v.cat).name} »`)} return }
+  const a=e.target.closest("[data-vact]"); if(!a) return;
+  if(a.dataset.vact==="fav"){v.fav=!v.fav; save(); render(); openViewer(v.id)}
+  else if(a.dataset.vact==="edit"){openAdd(v.id)}
+  else if(a.dataset.vact==="del"){$("#vConfirm").innerHTML=`<div class="confirm"><span>Retirer cette vidéo de ta vidéothèque ?</span><button class="btn ghost" type="button" data-vact="keep">Garder</button><button class="btn danger" type="button" data-vact="yes">Retirer</button></div>`}
+  else if(a.dataset.vact==="keep"){$("#vConfirm").innerHTML=""}
+  else if(a.dataset.vact==="yes"){S.videos=S.videos.filter(x=>x.id!==v.id); save(); hide(); render(); toast("Vidéo retirée")}
+});
+
+/* ================= Ajout / modification ================= */
+let pickCat=null, pickTouched=false;
+function renderPick(){
+  $("#fCats").innerHTML=S.cats.map(c=>`<button class="chip" type="button" data-pick="${esc(c.id)}" aria-pressed="${pickCat===c.id}" style="--c:${color(c)}"><i></i>${esc(c.name)}</button>`).join("");
+}
+function openAdd(id){
+  editId=id||null; const v=id?S.videos.find(x=>x.id===id):null;
+  $("#addTitle").textContent=v?"Modifier la vidéo":"Ajouter une vidéo"; $("#addSubmit").textContent=v?"Enregistrer":"Ajouter";
+  $("#fUrl").value=v?v.url:""; $("#fTitle").value=v?v.title||"":""; $("#fNote").value=v?v.note||"":"";
+  pickCat=v?catOf(v.cat).id:null; pickTouched=!!v; renderPick(); msg("Dans Instagram : Partager → Copier le lien.");
+  show("#addSheet"); if(!v) setTimeout(()=>$("#fUrl").focus(),300);
+}
+function msg(t,err){const m=$("#addMsg"); m.textContent=t; m.classList.toggle("err",!!err)}
+function autoPick(){ if(pickTouched) return; const g=guessCat($("#fTitle").value+" "+$("#fNote").value); pickCat=g==="autre"?null:g; renderPick() }
+$("#fCats").addEventListener("click",e=>{const b=e.target.closest("[data-pick]"); if(!b) return; pickCat=b.dataset.pick; pickTouched=true; renderPick()});
+$("#fTitle").addEventListener("input",autoPick); $("#fNote").addEventListener("input",autoPick);
+$("#fUrl").addEventListener("input",()=>{
+  const p=parseIg($("#fUrl").value); if(!p){msg("Dans Instagram : Partager → Copier le lien.");return}
+  const d=S.videos.find(v=>v.code===p.code&&v.id!==editId);
+  msg(d?`Déjà dans ta vidéothèque, dans « ${catOf(d.cat).name} ».`:`${p.kind} reconnu.`,!!d);
+});
+$("#pasteBtn").addEventListener("click",async()=>{
+  try{const t=await navigator.clipboard.readText(); $("#fUrl").value=t.trim(); $("#fUrl").dispatchEvent(new Event("input"))}
+  catch(e){$("#fUrl").focus(); msg("Touche le champ et choisis « Coller ».")}
+});
+$("#addForm").addEventListener("submit",e=>{
+  e.preventDefault();
+  const p=parseIg($("#fUrl").value);
+  if(!p){msg("Ce lien n'est pas un lien Instagram de vidéo ou de publication.",true);return}
+  const d=S.videos.find(v=>v.code===p.code&&v.id!==editId);
+  if(d){msg(`Déjà dans ta vidéothèque, dans « ${catOf(d.cat).name} ».`,true);return}
+  const title=$("#fTitle").value.trim(), note=$("#fNote").value.trim();
+  const cat=pickCat||guessCat(title+" "+note);
+  if(editId){const v=S.videos.find(x=>x.id===editId); Object.assign(v,{url:p.url,code:p.code,kind:p.kind,title,note,cat,auto:v.auto&&!pickTouched}); save(); hide(); render(); openViewer(v.id); toast("Modifications enregistrées")}
+  else{S.videos.push({id:"ig-"+p.code,url:p.url,code:p.code,kind:p.kind,author:"",title,note,cat,fav:false,auto:!pickCat,added:Date.now()}); save(); hide(); render(); toast(`Ajoutée dans « ${catOf(cat).name} »`)}
+});
+
+/* ================= Import / sauvegarde ================= */
+function extractFromInstagram(obj){
+  const found=new Map();
+  const fix=t=>{try{return decodeURIComponent(escape(t))}catch(e){return t}}; // Instagram encode mal les accents
+  const fromLabels=it=>{ // format 2025+ : {timestamp, label_values:[{label:"URL"},{label:"Caption"},{title:"Owner",dict}...]}
+    let url="",cap="",user="",tags=[];
+    for(const lv of it.label_values){
+      if(lv.label==="URL") url=lv.href||lv.value||"";
+      else if(lv.label==="Caption") cap=fix(lv.value||"");
+      else if(lv.title==="Owner") for(const o of lv.dict||[]) for(const x of o.dict||[]){ if(x.label==="Username") user=x.value||"" }
+      else if(lv.title==="Hashtags") for(const o of lv.dict||[]) for(const x of o.dict||[]) tags.push(x.value);
+    }
+    const p=parseIg(url); if(!p||found.has(p.code)) return;
+    const t=cap.replace(/#\S+|@\S+|https?:\/\/\S+/g,"").replace(/\s+/g," ").trim();
+    const m=t.match(/^(.{12,80}?[.!?…])\s/); let title=m?m[1]:t; if(title.length>80) title=title.slice(0,77).replace(/\s\S*$/,"")+"…";
+    found.set(p.code,{...p,author:user,title,hint:cap+" "+tags.join(" "),added:it.timestamp?it.timestamp*1000:0});
+  };
+  const walk=(node,ctx)=>{
+    if(Array.isArray(node)){node.forEach(n=>walk(n,ctx));return}
+    if(!node||typeof node!=="object") return;
+    if(Array.isArray(node.label_values)&&node.label_values.some(l=>l&&l.label==="URL")){fromLabels(node);return}
+    const here={...ctx};
+    if(typeof node.title==="string"&&node.title.trim()) here.author=node.title.trim();
+    for(const v of Object.values(node)) if(v&&typeof v==="object"&&typeof v.timestamp==="number") here.ts=v.timestamp;
+    if(typeof node.timestamp==="number") here.ts=node.timestamp;
+    if(typeof node.href==="string"){const p=parseIg(node.href);
+      if(p&&!found.has(p.code)){let a=here.author||""; if(!a&&typeof node.value==="string"&&!/^https?:/.test(node.value)) a=node.value;
+        found.set(p.code,{...p,author:a.replace(/^@/,""),added:here.ts?here.ts*1000:0})}}
+    for(const v of Object.values(node)) if(v&&typeof v==="object") walk(v,here);
+  };
+  walk(obj,{}); return [...found.values()];
+}
+function mergeVideos(incoming, cats){
+  if(cats&&cats.length&&!S.videos.length){ // vidéothèque vide : on reprend les catégories du fichier
+    S.cats=cats.map(c=>({id:String(c.id),name:String(c.name||c.id),hue:Number(c.hue)||0,fixed:c.id==="autre"||undefined}));
+    if(!S.cats.some(c=>c.id==="autre")) S.cats.push({id:"autre",name:"Autre",hue:215,fixed:true});
+  } else if(cats&&cats.length){ // ajoute les catégories inconnues du fichier
+    for(const c of cats) if(c&&c.id&&!S.cats.some(k=>k.id===c.id)) S.cats.splice(S.cats.length-1,0,{id:String(c.id),name:String(c.name||c.id),hue:Number(c.hue)||Math.floor(Math.random()*360)});
+  }
+  const have=new Set(S.videos.map(v=>v.code)); let added=0;
+  for(const it of incoming){
+    const p=parseIg(it.url); if(!p||have.has(p.code)) continue; have.add(p.code);
+    const cat=it.cat&&S.cats.some(c=>c.id===it.cat)?it.cat:guessCat([it.author,it.title,it.note,it.hint].join(" "));
+    S.videos.push({id:"ig-"+p.code,url:p.url,code:p.code,kind:p.kind,author:String(it.author||"").replace(/^@/,""),title:String(it.title||""),note:String(it.note||""),
+      cat,fav:!!it.fav,auto:it.auto!==false,added:Number(it.added)||Date.now()-added});
+    added++;
+  }
+  return added;
+}
+async function importFile(file){
+  const m=$("#menuMsg"); m.className="msg"; m.textContent="Lecture du fichier…"; $("#prog").hidden=false; $("#prog").firstElementChild.style.width="30%";
+  try{
+    let data, name=file.name.toLowerCase();
+    if(name.endsWith(".zip")){
+      if(!window.JSZip) throw new Error("Connecte-toi à Internet une première fois pour pouvoir ouvrir les .zip.");
+      const zip=await JSZip.loadAsync(file);
+      const own=Object.values(zip.files).find(f=>/videotheque.*\.json$/i.test(f.name));
+      if(own) data=JSON.parse(await own.async("string"));
+      else{
+        const fs=Object.values(zip.files).filter(f=>!f.dir&&/\.json$/i.test(f.name)&&/saved/i.test(f.name));
+        if(!fs.length) throw new Error("Ce .zip ne contient pas tes enregistrements. Refais l'export avec « Saved » en JSON.");
+        let all=[]; for(const f of fs){try{all=all.concat(extractFromInstagram(JSON.parse(await f.async("string"))))}catch(e){}}
+        data={instagram:all};
+      }
+    } else if(name.endsWith(".html")) throw new Error("Ce fichier est en HTML. Refais l'export en choisissant JSON.");
+    else data=JSON.parse(await file.text());
+    $("#prog").firstElementChild.style.width="70%";
+    let added, total;
+    if(data&&data.app==="videotheque"&&Array.isArray(data.videos)){total=data.videos.length; added=mergeVideos(data.videos,data.cats)}
+    else{const list=data.instagram||extractFromInstagram(data); total=list.length; added=mergeVideos(list)}
+    if(!total) throw new Error("Aucune vidéo trouvée dans ce fichier.");
+    save(); render(); $("#prog").firstElementChild.style.width="100%";
+    m.className="msg"; m.textContent=added?`${added} vidéo${added>1?"s":""} ajoutée${added>1?"s":""}.${total>added?` ${total-added} étaient déjà là.`:""}`:"Toutes les vidéos de ce fichier sont déjà dans ta vidéothèque.";
+    if(added&&!(data.app==="videotheque")) m.textContent+=" Pour un tri plus précis, envoie le fichier à Claude : il te renverra un fichier déjà classé.";
+    toast(added?`${added} vidéos importées`:"Rien de nouveau");
+  }catch(e){m.className="msg err"; m.textContent=e.message&&!/JSON|Unexpected/.test(e.message)?e.message:"Ce fichier n'a pas pu être lu. Utilise le fichier préparé par Claude ou le .zip d'Instagram."}
+  setTimeout(()=>{$("#prog").hidden=true},800);
+}
+$("#importBtn").addEventListener("click",()=>$("#fileIn").click());
+$("#fileIn").addEventListener("change",e=>{const f=e.target.files[0]; if(f) importFile(f); e.target.value=""});
+$("#exportBtn").addEventListener("click",async()=>{
+  const data={app:"videotheque",version:1,exported:new Date().toISOString(),cats:S.cats,videos:S.videos};
+  const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
+  const fname=`videotheque-${new Date().toISOString().slice(0,10)}.json`;
+  try{
+    const file=new File([blob],fname,{type:"application/json"});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:"Ma vidéothèque"}); return}
+  }catch(e){if(e&&e.name==="AbortError") return}
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=fname; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000); toast("Sauvegarde téléchargée");
+});
+$("#pvToggle").addEventListener("change",e=>{S.previews=e.target.checked; save(); render()});
+
+/* ================= Catégories ================= */
+function renderCats(){
+  const n=id=>S.videos.filter(v=>catOf(v.cat).id===id).length;
+  $("#catList").innerHTML=S.cats.map((c,i)=>`<div class="catrow" style="--c:${color(c)}"><i></i>
+    <input type="text" value="${esc(c.name)}" data-rename="${esc(c.id)}" maxlength="30" aria-label="Nom de la catégorie">
+    <b>${n(c.id)}</b>
+    ${c.fixed?`<span style="width:120px"></span>`:`<button class="ib" type="button" data-up="${i}" aria-label="Monter" ${i===0?"disabled":""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 15l6-6 6 6"/></svg></button>
+    <button class="ib" type="button" data-down="${i}" aria-label="Descendre" ${i>=S.cats.length-2?"disabled":""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></button>
+    <button class="ib" type="button" data-delcat="${esc(c.id)}" aria-label="Supprimer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>`}
+  </div>`).join("");
+}
+$("#catsBtn").addEventListener("click",()=>{$("#menuMain").hidden=true; $("#catsPane").hidden=false; $("#menuTitle").textContent="Catégories"; renderCats()});
+$("#catsBack").addEventListener("click",()=>{$("#menuMain").hidden=false; $("#catsPane").hidden=true; $("#menuTitle").textContent="Réglages"});
+$("#catList").addEventListener("input",e=>{const i=e.target.closest("[data-rename]"); if(!i) return; const c=S.cats.find(k=>k.id===i.dataset.rename); if(c&&i.value.trim()){c.name=i.value.trim(); save(); renderChips(); if(!openSheet||openSheet.id!=="menuSheet") render()}});
+$("#catList").addEventListener("change",()=>render());
+$("#catList").addEventListener("click",e=>{
+  const up=e.target.closest("[data-up]"), dn=e.target.closest("[data-down]"), del=e.target.closest("[data-delcat]");
+  if(up||dn){const i=Number((up||dn).dataset.up??(up||dn).dataset.down), j=up?i-1:i+1; if(j<0||j>=S.cats.length-1) return; [S.cats[i],S.cats[j]]=[S.cats[j],S.cats[i]]; save(); renderCats(); render(); return}
+  if(del){
+    if(del.dataset.armed!=="1"){del.dataset.armed="1"; del.style.background="var(--danger)"; del.style.color="#fff"; toast("Touche encore pour supprimer"); return}
+    const id=del.dataset.delcat; S.videos.forEach(v=>{if(v.cat===id) v.cat="autre"}); S.cats=S.cats.filter(c=>c.id!==id);
+    if(view.cat===id) view.cat="all"; save(); renderCats(); render();
+  }
+});
+$("#newCatForm").addEventListener("submit",e=>{
+  e.preventDefault(); const name=$("#newCat").value.trim(); if(!name) return;
+  if(S.cats.some(c=>c.name.toLowerCase()===name.toLowerCase())){toast("Cette catégorie existe déjà");return}
+  let id=slug(name); while(S.cats.some(c=>c.id===id)) id+="-2";
+  const used=S.cats.map(c=>c.hue); let hue=(S.cats.length*53+11)%360;
+  for(let k=0;k<14&&used.some(u=>Math.min(Math.abs(u-hue),360-Math.abs(u-hue))<16);k++) hue=(hue+23)%360;
+  S.cats.splice(S.cats.length-1,0,{id,name,hue}); $("#newCat").value=""; save(); renderCats(); render(); toast(`« ${name} » créée`);
+});
+
+/* ================= Navigation ================= */
+$("#chips").addEventListener("click",e=>{const b=e.target.closest("[data-cat]"); if(!b) return; view.cat=b.dataset.cat; view.limit=30; render(); window.scrollTo({top:0})});
+$("#main").addEventListener("click",e=>{
+  const t=e.target.closest(".tile"); if(t){openViewer(t.dataset.id);return}
+  const o=e.target.closest("[data-open]"); if(o){view.cat=o.dataset.open; view.limit=30; render(); window.scrollTo({top:0}); return}
+  const a=e.target.closest("[data-act]"); if(!a) return;
+  if(a.dataset.act==="more"){view.limit+=30; renderMain()}
+  if(a.dataset.act==="import"){openMenu(); $("#fileIn").click()}
+});
+$("#addBtn").addEventListener("click",()=>openAdd());
+function openMenu(){$("#menuMain").hidden=false; $("#catsPane").hidden=true; $("#menuTitle").textContent="Réglages"; $("#pvToggle").checked=!!S.previews; show("#menuSheet")}
+$("#menuBtn").addEventListener("click",openMenu);
+$("#searchBtn").addEventListener("click",()=>{const r=$("#searchRow"); r.hidden=!r.hidden; if(!r.hidden) $("#q").focus(); else {$("#q").value=""; view.q=""; render()}});
+$("#q").addEventListener("input",()=>{view.q=$("#q").value.trim().toLowerCase(); view.limit=30; renderMain()});
+
+/* glisser une tuile sur une catégorie (ordinateur) */
+$("#main").addEventListener("dragstart",e=>{const t=e.target.closest(".tile"); if(!t) return; dragId=t.dataset.id; e.dataTransfer.setData("text/plain",dragId); e.dataTransfer.effectAllowed="move"});
+$("#main").addEventListener("dragend",()=>{dragId=null; document.querySelectorAll(".chip.drop").forEach(c=>c.classList.remove("drop"))});
+$("#chips").addEventListener("dragover",e=>{const c=e.target.closest("[data-cat]"); if(!dragId||!c||["all","fav"].includes(c.dataset.cat)) return; e.preventDefault(); document.querySelectorAll(".chip.drop").forEach(x=>x!==c&&x.classList.remove("drop")); c.classList.add("drop")});
+$("#chips").addEventListener("drop",e=>{const c=e.target.closest("[data-cat]"); if(!dragId||!c) return; e.preventDefault(); const v=S.videos.find(x=>x.id===dragId);
+  if(v&&!["all","fav"].includes(c.dataset.cat)&&v.cat!==c.dataset.cat){v.cat=c.dataset.cat; v.auto=false; save(); render(); toast(`Rangée dans « ${catOf(v.cat).name} »`)}});
+
+render();
+if("serviceWorker" in navigator && location.protocol==="https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>
