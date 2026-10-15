@@ -501,9 +501,17 @@ function mergeVideos(incoming, cats){
   } else if(cats&&cats.length){ // ajoute les catégories inconnues du fichier
     for(const c of cats) if(c&&c.id&&!S.cats.some(k=>k.id===c.id)) S.cats.splice(S.cats.length-1,0,{id:String(c.id),name:String(c.name||c.id),hue:Number(c.hue)||Math.floor(Math.random()*360)});
   }
-  const have=new Set(S.videos.map(v=>v.code)); let added=0;
+  const byCode=new Map(S.videos.map(v=>[v.code,v])); const have=new Set(byCode.keys()); let added=0; mergeVideos.updated=0;
   for(const it of incoming){
-    const p=parseIg(it.url); if(!p||have.has(p.code)) continue; have.add(p.code);
+    const p=parseIg(it.url); if(!p) continue;
+    if(have.has(p.code)){
+      // déjà là : un fichier classé par Claude corrige les vidéos classées automatiquement (jamais celles rangées à la main)
+      const v=byCode.get(p.code);
+      if(v&&it.cat&&v.auto!==false&&v.cat!==it.cat&&S.cats.some(c=>c.id===it.cat)){v.cat=it.cat; mergeVideos.updated++}
+      if(v&&!v.title&&it.title) v.title=String(it.title);
+      continue;
+    }
+    have.add(p.code);
     const cat=it.cat&&S.cats.some(c=>c.id===it.cat)?it.cat:guessCat([it.author,it.title,it.note,it.hint].join(" "));
     S.videos.push({id:"ig-"+p.code,url:p.url,code:p.code,kind:p.kind,author:String(it.author||"").replace(/^@/,""),title:String(it.title||""),note:String(it.note||""),
       cat,fav:!!it.fav,auto:it.auto!==false,added:Number(it.added)||Date.now()-added});
@@ -533,10 +541,11 @@ async function importFile(file){
     if(data&&data.app==="videotheque"&&Array.isArray(data.videos)){total=data.videos.length; added=mergeVideos(data.videos,data.cats)}
     else{const list=data.instagram||extractFromInstagram(data); total=list.length; added=mergeVideos(list)}
     if(!total) throw new Error("Aucune vidéo trouvée dans ce fichier.");
+    const upd=mergeVideos.updated||0;
     save(); render(); $("#prog").firstElementChild.style.width="100%";
-    m.className="msg"; m.textContent=added?`${added} vidéo${added>1?"s":""} ajoutée${added>1?"s":""}.${total>added?` ${total-added} étaient déjà là.`:""}`:"Toutes les vidéos de ce fichier sont déjà dans ta vidéothèque.";
+    m.className="msg"; m.textContent=(upd?`${upd} vidéo${upd>1?"s":""} reclassée${upd>1?"s":""}. `:"")+(added?`${added} vidéo${added>1?"s":""} ajoutée${added>1?"s":""}.${total>added?` ${total-added} étaient déjà là.`:""}`:(upd?"":"Toutes les vidéos de ce fichier sont déjà dans ta vidéothèque."));
     if(added&&!(data.app==="videotheque")) m.textContent+=" Pour un tri plus précis, envoie le fichier à Claude : il te renverra un fichier déjà classé.";
-    toast(added?`${added} vidéos importées`:"Rien de nouveau");
+    toast(added?`${added} vidéos importées`:upd?`${upd} vidéos reclassées`:"Rien de nouveau");
   }catch(e){m.className="msg err"; m.textContent=e.message&&!/JSON|Unexpected/.test(e.message)?e.message:"Ce fichier n'a pas pu être lu. Utilise le fichier préparé par Claude ou le .zip d'Instagram."}
   setTimeout(()=>{$("#prog").hidden=true},800);
 }
